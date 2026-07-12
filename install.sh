@@ -124,6 +124,25 @@ EOF
 
   echo -e "${GREEN}✓ فایل .env با موفقیت ذخیره شد.${NC}"
 
+  # Open chosen port in firewall (ufw or iptables)
+  echo -e "${BLUE}🛡️ بررسی و تنظیم فایروال سیستم...${NC}"
+  if command -v ufw &> /dev/null && ufw status | grep -q "active"; then
+    echo -e "${BLUE}🛡️ در حال باز کردن پورت ${USER_PORT} در فایروال (UFW)...${NC}"
+    ufw allow ${USER_PORT}/tcp &> /dev/null || true
+    ufw reload &> /dev/null || true
+    echo -e "${GREEN}✓ پورت ${USER_PORT} با موفقیت در فایروال UFW باز شد.${NC}"
+  elif command -v iptables &> /dev/null; then
+    echo -e "${BLUE}🛡️ در حال باز کردن پورت ${USER_PORT} در iptables...${NC}"
+    iptables -A INPUT -p tcp --dport ${USER_PORT} -j ACCEPT &> /dev/null || true
+    echo -e "${GREEN}✓ پورت ${USER_PORT} با موفقیت در iptables مجاز شد.${NC}"
+  fi
+
+  # Warn about cloud provider firewalls
+  echo -e "${YELLOW}⚠️ نکته بسیار مهم:${NC}"
+  echo -e "اگر از سرورهای ابری (مانند Hetzner, AWS, GCP, DigitalOcean, Oracle) استفاده می‌کنید،"
+  echo -e "حتماً پورت ${USER_PORT} را در پنل کاربری شرکت هاستینگ (Security Groups / Cloud Firewall) نیز باز کنید."
+  echo -e ""
+
   # Install npm dependencies
   echo -e "${BLUE}📦 در حال نصب پکیج‌های پروژه (npm install)...${NC}"
   npm install
