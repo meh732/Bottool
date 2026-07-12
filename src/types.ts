@@ -5,6 +5,11 @@ export interface BotSettings {
   adText: string; // Used for channels or in-config advertisements
   botEnabled: boolean;
   webhookActive: boolean;
+  adminUsername?: string;
+  adminPassword?: string;
+  backupPassword?: string;
+  backupIntervalHours?: number;
+  autoBackupEnabled?: boolean;
 }
 
 export interface UserBotSettings {

@@ -5,6 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { loadDb, updateSettings, getSettings, getLogs, getBotStatus, clearLogs } from './src/db.js';
 import { startBotEngine, stopBotEngine, handleTelegramUpdate } from './src/telegramBot.js';
+import { createBackup, restoreBackup, listBackups, deleteBackup, initAutoBackup } from './src/backup.js';
 
 dotenv.config();
 
@@ -16,6 +17,9 @@ async function bootstrap() {
   // Load database
   loadDb();
 
+  // Initialize auto backups on startup
+  initAutoBackup();
+
   // Try to start Bot Engine on startup if it was enabled
   const currentSettings = getSettings();
   if (currentSettings.botEnabled && currentSettings.botToken) {
@@ -24,11 +28,52 @@ async function bootstrap() {
   }
 
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json());
 
+  // --- Auth Middleware for APIs ---
+  app.use((req, res, next) => {
+    // Allow public routes
+    if (
+      req.path === '/api/login' ||
+      req.path === '/api/health' ||
+      req.path === '/api/telegram-webhook' ||
+      !req.path.startsWith('/api')
+    ) {
+      return next();
+    }
+
+    const authHeader = req.headers.authorization;
+    const settings = getSettings();
+    const expectedToken = Buffer.from(`${settings.adminUsername || 'admin'}:${settings.adminPassword || 'admin'}`).toString('base64');
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      if (token === expectedToken) {
+        return next();
+      }
+    }
+
+    return res.status(401).json({ success: false, error: 'Unauthorized access. Please login first.' });
+  });
+
   // --- API Routes ---
+
+  // Admin Login Endpoint
+  app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    const settings = getSettings();
+    const adminUser = settings.adminUsername || 'admin';
+    const adminPass = settings.adminPassword || 'admin';
+
+    if (username === adminUser && password === adminPass) {
+      const token = Buffer.from(`${username}:${password}`).toString('base64');
+      res.json({ success: true, token });
+    } else {
+      res.status(401).json({ success: false, error: 'نام کاربری یا رمز عبور نامعتبر است.' });
+    }
+  });
 
   // Get status, settings, logs
   app.get('/api/dashboard', (req, res) => {
@@ -45,6 +90,15 @@ async function bootstrap() {
       const oldSettings = getSettings();
       const updated = updateSettings(req.body);
       
+      // If auto-backup settings changed, re-init auto backup
+      if (
+        oldSettings.autoBackupEnabled !== updated.autoBackupEnabled ||
+        oldSettings.backupIntervalHours !== updated.backupIntervalHours ||
+        oldSettings.backupPassword !== updated.backupPassword
+      ) {
+        initAutoBackup();
+      }
+
       // If token changed or enabled/disabled status changed, trigger restart
       if (
         oldSettings.botToken !== updated.botToken ||
@@ -87,6 +141,47 @@ async function bootstrap() {
     }
   });
 
+  // --- Backup APIs ---
+
+  // Get all backups
+  app.get('/api/backups', (req, res) => {
+    res.json({ success: true, backups: listBackups() });
+  });
+
+  // Create backup manually
+  app.post('/api/backups/create', (req, res) => {
+    const result = createBackup();
+    if (result.success) {
+      res.json({ success: true, filename: result.filename, backups: listBackups() });
+    } else {
+      res.status(500).json({ success: false, error: result.error });
+    }
+  });
+
+  // Delete a backup
+  app.post('/api/backups/delete', (req, res) => {
+    const { filename } = req.body;
+    const deleted = deleteBackup(filename);
+    if (deleted) {
+      res.json({ success: true, backups: listBackups() });
+    } else {
+      res.status(400).json({ success: false, error: 'حذف فایل پشتیبان ناموفق بود.' });
+    }
+  });
+
+  // Restore database from backup
+  app.post('/api/backups/restore', (req, res) => {
+    const { filename, password } = req.body;
+    const result = restoreBackup(filename, password);
+    if (result.success) {
+      // Re-initialize auto backups after restore since settings could have changed
+      initAutoBackup();
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  });
+
   // Webhook Receiver Endpoint for Telegram
   app.post('/api/telegram-webhook', async (req, res) => {
     try {
@@ -121,7 +216,7 @@ async function bootstrap() {
     });
   }
 
-  // Bind to 0.0.0.0 and port 3000
+  // Bind to 0.0.0.0 and dynamic port (or port 3000)
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running at http://localhost:${PORT}`);
   });

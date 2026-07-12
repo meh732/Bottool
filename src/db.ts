@@ -10,7 +10,12 @@ const defaultSettings: BotSettings = {
   captionText: '✨ Your Customized VPN Config\n\n📢 Join our channel for more fast configs:\n👉 @MyChannel',
   adText: '@MyChannel',
   botEnabled: false,
-  webhookActive: false
+  webhookActive: false,
+  adminUsername: process.env.ADMIN_USERNAME || 'admin',
+  adminPassword: process.env.ADMIN_PASSWORD || 'admin',
+  backupPassword: process.env.BACKUP_PASSWORD || 'BackupSecurePass123',
+  backupIntervalHours: 2,
+  autoBackupEnabled: true
 };
 
 const defaultData: DashboardData = {

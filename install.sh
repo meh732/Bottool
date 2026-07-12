@@ -86,16 +86,40 @@ install_bot() {
   IP_ADDR=$(curl -s https://api.ipify.org || echo "YOUR_VPS_IP")
   DEFAULT_URL="https://${IP_ADDR}"
   
-  read -p "❓ آدرس سرور شما (برای وب‌هوک تلگرام - پیش‌فرض http://${IP_ADDR}:3000): " USER_URL
+  read -p "❓ پورت مورد نظر جهت راه‌اندازی پنل وب (پیش‌فرض 3000): " USER_PORT
+  if [ -z "$USER_PORT" ]; then
+    USER_PORT="3000"
+  fi
+
+  read -p "❓ آدرس سرور شما (برای وب‌هوک تلگرام - پیش‌فرض http://${IP_ADDR}:${USER_PORT}): " USER_URL
   if [ -z "$USER_URL" ]; then
-    USER_URL="http://${IP_ADDR}:3000"
+    USER_URL="http://${IP_ADDR}:${USER_PORT}"
+  fi
+
+  read -p "❓ نام کاربری مدیر جهت ورود به پنل (پیش‌فرض admin): " USER_ADMIN
+  if [ -z "$USER_ADMIN" ]; then
+    USER_ADMIN="admin"
+  fi
+
+  read -p "❓ رمز عبور مدیر جهت ورود به پنل (پیش‌فرض admin): " USER_PASS
+  if [ -z "$USER_PASS" ]; then
+    USER_PASS="admin"
+  fi
+
+  read -p "❓ رمز عبور رمزنگاری فایل‌های پشتیبان (پیش‌فرض BackupSecurePass123): " USER_BACKUP
+  if [ -z "$USER_BACKUP" ]; then
+    USER_BACKUP="BackupSecurePass123"
   fi
 
   # Create .env file
   echo -e "${BLUE}📝 ایجاد فایل تنظیمات .env...${NC}"
   cat <<EOF > .env
 NODE_ENV=production
+PORT=${USER_PORT}
 APP_URL=${USER_URL}
+ADMIN_USERNAME=${USER_ADMIN}
+ADMIN_PASSWORD=${USER_PASS}
+BACKUP_PASSWORD=${USER_BACKUP}
 EOF
 
   echo -e "${GREEN}✓ فایل .env با موفقیت ذخیره شد.${NC}"

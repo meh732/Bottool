@@ -17,14 +17,32 @@ import {
   HelpCircle, 
   Sparkles,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Lock,
+  Unlock,
+  Database,
+  Key
 } from 'lucide-react';
 import { BotSettings, ProcessedLog, BotStatus } from './types';
 import { customizeConfig } from './configParser';
 
 export default function App() {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'sandbox' | 'logs'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'settings' | 'sandbox' | 'logs' | 'backups'>('dashboard');
+
+  // Authentication States
+  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('vpn_admin_token'));
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Backups States
+  const [backups, setBackups] = useState<{ filename: string; size: number; date: string }[]>([]);
+  const [backupPasswordToRestore, setBackupPasswordToRestore] = useState('');
+  const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<string | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
 
   // Backend States
   const [settings, setSettings] = useState<BotSettings>({
@@ -33,7 +51,12 @@ export default function App() {
     captionText: '✨ Your Customized VPN Config\n\n📢 Join our channel for more fast configs:\n👉 @MyChannel',
     adText: '@MyChannel',
     botEnabled: false,
-    webhookActive: false
+    webhookActive: false,
+    adminUsername: 'admin',
+    adminPassword: 'admin',
+    backupPassword: 'BackupSecurePass123',
+    backupIntervalHours: 2,
+    autoBackupEnabled: true
   });
   
   const [botStatus, setBotStatus] = useState<BotStatus>({
@@ -64,11 +87,142 @@ export default function App() {
   // Clipboard copies
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Authenticated fetch helper
+  const apiFetch = async (url: string, options: RequestInit = {}) => {
+    const headers = {
+      ...options.headers,
+      'Authorization': authToken ? `Bearer ${authToken}` : '',
+    };
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+      setAuthToken(null);
+      localStorage.removeItem('vpn_admin_token');
+    }
+    return res;
+  };
+
+  // Handle Admin Login
+  const handleLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAuthToken(data.token);
+        localStorage.setItem('vpn_admin_token', data.token);
+      } else {
+        setLoginError(data.error || 'نام کاربری یا رمز عبور اشتباه است.');
+      }
+    } catch (err) {
+      setLoginError('خطا در برقراری ارتباط با سرور.');
+    }
+  };
+
+  // Handle Admin Logout
+  const handleLogout = () => {
+    setAuthToken(null);
+    localStorage.removeItem('vpn_admin_token');
+  };
+
+  // Fetch Backups from Backend
+  const fetchBackups = async () => {
+    try {
+      const res = await apiFetch('/api/backups');
+      if (res.ok) {
+        const data = await res.json();
+        setBackups(data.backups);
+      }
+    } catch (err) {
+      console.error('Failed to fetch backups:', err);
+    }
+  };
+
+  // Create Backup
+  const handleCreateBackup = async () => {
+    setBackupLoading(true);
+    setBackupSuccess(null);
+    setBackupError(null);
+    try {
+      const res = await apiFetch('/api/backups/create', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setBackups(data.backups);
+        setBackupSuccess('نسخه پشتیبان جدید با موفقیت رمزگذاری و ذخیره شد.');
+        setTimeout(() => setBackupSuccess(null), 4000);
+      } else {
+        const data = await res.json();
+        setBackupError(data.error || 'خطا در ایجاد نسخه پشتیبان.');
+      }
+    } catch (err) {
+      setBackupError('خطا در برقراری ارتباط با سرور.');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  // Delete Backup
+  const handleDeleteBackup = async (filename: string) => {
+    if (!confirm('آیا از حذف این نسخه پشتیبان اطمینان کامل دارید؟ (این عملیات غیر قابل بازگشت است)')) return;
+    try {
+      const res = await apiFetch('/api/backups/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBackups(data.backups);
+      }
+    } catch (err) {
+      console.error('Failed to delete backup:', err);
+    }
+  };
+
+  // Restore Backup
+  const handleRestoreBackup = async () => {
+    if (!selectedBackupForRestore) return;
+    if (!backupPasswordToRestore) {
+      alert('لطفاً رمز عبور دیکریپت فایل پشتیبان را وارد کنید.');
+      return;
+    }
+    setBackupLoading(true);
+    setBackupError(null);
+    setBackupSuccess(null);
+    try {
+      const res = await apiFetch('/api/backups/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: selectedBackupForRestore, password: backupPasswordToRestore }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBackupSuccess('پایگاه داده با موفقیت بازگردانی شد! سامانه تا چند لحظه دیگر ریستارت می‌شود...');
+        setSelectedBackupForRestore(null);
+        setBackupPasswordToRestore('');
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+      } else {
+        setBackupError(data.error || 'رمز عبور پشتیبان نامعتبر است یا ساختار فایل خراب شده است.');
+      }
+    } catch (err) {
+      setBackupError('خطا در ارتباط با سرور جهت بازگردانی پشتیبان.');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
   // Fetch Dashboard Data from Backend
   const fetchDashboardData = async (showLoading = false) => {
+    if (!authToken) return;
     if (showLoading) setIsLoading(true);
     try {
-      const res = await fetch('/api/dashboard');
+      const res = await apiFetch('/api/dashboard');
       if (res.ok) {
         const data = await res.json();
         setSettings(data.settings);
@@ -84,12 +238,15 @@ export default function App() {
 
   // Poll backend data every 3 seconds for real-time logs and status
   useEffect(() => {
-    fetchDashboardData(true);
-    const interval = setInterval(() => {
-      fetchDashboardData(false);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
+    if (authToken) {
+      fetchDashboardData(true);
+      fetchBackups();
+      const interval = setInterval(() => {
+        fetchDashboardData(false);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [authToken]);
 
   // Save Settings
   const handleSaveSettings = async (e?: FormEvent) => {
@@ -97,7 +254,7 @@ export default function App() {
     setSaveLoading(true);
     setSaveSuccess(false);
     try {
-      const res = await fetch('/api/settings', {
+      const res = await apiFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
@@ -120,7 +277,7 @@ export default function App() {
   const handleToggleBot = async () => {
     const nextState = !botStatus.isRunning;
     try {
-      const res = await fetch('/api/bot/toggle', {
+      const res = await apiFetch('/api/bot/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: nextState }),
@@ -141,7 +298,7 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch('/api/logs/clear', { method: 'POST' });
+      const res = await apiFetch('/api/logs/clear', { method: 'POST' });
       if (res.ok) {
         setLogs([]);
       }
@@ -236,6 +393,76 @@ export default function App() {
   const totalUnlocked = logs.filter(l => l.status === 'unlocked').length;
   const totalFailed = logs.filter(l => l.status === 'failed').length;
 
+  if (!authToken) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans antialiased flex flex-col justify-center items-center p-4 selection:bg-emerald-500/30 selection:text-emerald-200">
+        <div className="h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 w-full fixed top-0 left-0" />
+        
+        <div className="w-full max-w-md bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-8 shadow-xl backdrop-blur-md">
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="p-3.5 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-emerald-400 mb-4 animate-pulse">
+              <Shield className="w-8 h-8" />
+            </div>
+            <h1 className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-zinc-50 to-zinc-300 bg-clip-text text-transparent mb-2">
+              پنل مدیریت ربات تلگرام VPN
+            </h1>
+            <p className="text-zinc-500 text-xs text-center" dir="rtl">
+              لطفاً جهت دسترسی به تنظیمات ربات و سیستم پشتیبان‌گیری وارد شوید.
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-5" dir="rtl">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-400 block text-right">
+                نام کاربری مدیر / Admin Username
+              </label>
+              <input
+                type="text"
+                required
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                placeholder="نام کاربری پیش‌فرض: admin"
+                className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 font-mono text-left focus:outline-none focus:border-emerald-500/80 transition-all placeholder:text-zinc-600"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-400 block text-right">
+                رمز عبور / Admin Password
+              </label>
+              <input
+                type="password"
+                required
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="رمز عبور پیش‌فرض: admin"
+                className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 font-mono text-left focus:outline-none focus:border-emerald-500/80 transition-all placeholder:text-zinc-600"
+              />
+            </div>
+
+            {loginError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs font-medium text-center">
+                ⚠️ {loginError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold py-3.5 rounded-xl text-sm transition-all shadow-md shadow-emerald-950/20 flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Lock className="w-4 h-4" />
+              <span>ورود به پنل مدیریت</span>
+            </button>
+          </form>
+        </div>
+
+        <p className="mt-8 text-zinc-600 text-xs text-center">
+          © 2026 VPN Config Customizer Bot Engine. All Rights Reserved.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
       
@@ -299,7 +526,7 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           
           {/* Navigation Sidebar */}
-          <nav className="lg:col-span-1 flex flex-row lg:flex-col gap-2 overflow-x-auto pb-4 lg:pb-0 border-b lg:border-b-0 lg:border-r border-zinc-800/80">
+          <nav className="lg:col-span-1 flex flex-col gap-2 border-b lg:border-b-0 lg:border-r border-zinc-800/80 min-h-[350px]">
             <button
               onClick={() => setActiveTab('dashboard')}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition-all cursor-pointer whitespace-nowrap ${
@@ -351,6 +578,33 @@ export default function App() {
                   {logs.length}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('backups')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'backups'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-l-2 lg:border-l-2 border-emerald-500 font-bold'
+                  : 'text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200'
+              }`}
+            >
+              <Database className="w-5 h-5" />
+              <span>پشتیبان‌گیری / Backups</span>
+              {backups.length > 0 && (
+                <span className="ml-auto bg-zinc-800 text-zinc-300 text-xs px-2 py-0.5 rounded-full font-mono">
+                  {backups.length}
+                </span>
+              )}
+            </button>
+
+            <div className="flex-grow hidden lg:block" />
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition-all cursor-pointer whitespace-nowrap text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 mt-4"
+            >
+              <Lock className="w-5 h-5 animate-pulse" />
+              <span>خروج از پنل / Logout</span>
             </button>
           </nav>
 
@@ -563,6 +817,88 @@ export default function App() {
                         <p className="text-xs text-zinc-500 text-right" dir="rtl">
                           کپشن دلخواه شما با پشتیبانی از اموجی و متن‌های خلاقانه برای زیر کانفیگ‌های خروجی تلگرام.
                         </p>
+                      </div>
+
+                      {/* Admin Credentials Setup */}
+                      <div className="border-t border-zinc-800/80 pt-6 space-y-4">
+                        <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5" dir="rtl">
+                          <Lock className="w-4 h-4" />
+                          <span>تنظیمات امنیتی و ورود به پنل</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-semibold text-zinc-400 block text-right" dir="rtl">
+                              نام کاربری مدیر (Admin Username)
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.adminUsername || ''}
+                              onChange={(e) => setSettings({ ...settings, adminUsername: e.target.value })}
+                              placeholder="admin"
+                              className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 font-mono focus:outline-none focus:border-emerald-500/80 transition-all placeholder:text-zinc-600"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-semibold text-zinc-400 block text-right" dir="rtl">
+                              رمز عبور مدیر (Admin Password)
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.adminPassword || ''}
+                              onChange={(e) => setSettings({ ...settings, adminPassword: e.target.value })}
+                              placeholder="admin"
+                              className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 font-mono focus:outline-none focus:border-emerald-500/80 transition-all placeholder:text-zinc-600"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Automated Backup Settings */}
+                      <div className="border-t border-zinc-800/80 pt-6 space-y-4">
+                        <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5" dir="rtl">
+                          <Database className="w-4 h-4" />
+                          <span>تنظیمات پشتیبان‌گیری خودکار پایگاه داده</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-semibold text-zinc-400 block text-right" dir="rtl">
+                              فعال‌سازی بکاپ خودکار
+                            </label>
+                            <div className="flex items-center justify-end h-10 pr-2">
+                              <input
+                                type="checkbox"
+                                checked={settings.autoBackupEnabled !== false}
+                                onChange={(e) => setSettings({ ...settings, autoBackupEnabled: e.target.checked })}
+                                className="w-5 h-5 accent-emerald-500 cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-semibold text-zinc-400 block text-right" dir="rtl">
+                              دوره تناوب بکاپ (ساعت)
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={168}
+                              value={settings.backupIntervalHours || 2}
+                              onChange={(e) => setSettings({ ...settings, backupIntervalHours: parseInt(e.target.value) || 2 })}
+                              className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 font-mono focus:outline-none focus:border-emerald-500/80 transition-all"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-semibold text-zinc-400 block text-right" dir="rtl">
+                              رمز نگاری بکاپ (Backup Password)
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.backupPassword || ''}
+                              onChange={(e) => setSettings({ ...settings, backupPassword: e.target.value })}
+                              placeholder="Backup Password"
+                              className="w-full bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 font-mono focus:outline-none focus:border-emerald-500/80 transition-all placeholder:text-zinc-600"
+                            />
+                          </div>
+                        </div>
                       </div>
 
                     </div>
@@ -805,6 +1141,152 @@ export default function App() {
                         </div>
                       )}
 
+                    </div>
+
+                  </div>
+                )}
+
+                {/* 5. BACKUPS VIEW */}
+                {activeTab === 'backups' && (
+                  <div className="space-y-6 animate-fade-in" dir="rtl">
+                    
+                    <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-zinc-800/80 pb-4 mb-6 gap-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-zinc-200">سیستم پشتیبان‌گیری پایگاه داده / Backups Manager</h3>
+                          <p className="text-zinc-500 text-xs mt-0.5">پشتیبان‌گیری رمزگذاری‌شده از پیکربندی ربات، تنظیمات و تمامی لاگ‌ها</p>
+                        </div>
+                        
+                        <button
+                          onClick={handleCreateBackup}
+                          disabled={backupLoading}
+                          className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-950/20 disabled:opacity-50"
+                        >
+                          <Database className="w-4 h-4" />
+                          <span>ایجاد بکاپ جدید / Create Backup</span>
+                        </button>
+                      </div>
+
+                      {backupSuccess && (
+                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-semibold mb-4 text-center">
+                          ✓ {backupSuccess}
+                        </div>
+                      )}
+
+                      {backupError && (
+                        <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs font-semibold mb-4 text-center">
+                          ⚠️ {backupError}
+                        </div>
+                      )}
+
+                      {/* Decryption password modal/form for restore */}
+                      {selectedBackupForRestore && (
+                        <div className="mb-6 p-5 bg-emerald-950/20 border border-emerald-500/20 rounded-2xl space-y-4">
+                          <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
+                            <Unlock className="w-4 h-4" />
+                            <span>بازگردانی نسخه پشتیبان: {selectedBackupForRestore}</span>
+                          </h4>
+                          <p className="text-xs text-zinc-400">
+                            جهت بازگردانی اطلاعات، رمز عبوری که در زمان تهیه پشتیبان ست شده بود را وارد نمایید.
+                          </p>
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <input
+                              type="password"
+                              value={backupPasswordToRestore}
+                              onChange={(e) => setBackupPasswordToRestore(e.target.value)}
+                              placeholder="رمز عبور دیکریپشن بکاپ"
+                              className="bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-100 font-mono text-left focus:outline-none focus:border-emerald-500/80 transition-all placeholder:text-zinc-600 flex-1"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={handleRestoreBackup}
+                                disabled={backupLoading}
+                                className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                {backupLoading ? 'در حال بازگردانی...' : 'تایید و بازگردانی'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedBackupForRestore(null);
+                                  setBackupPasswordToRestore('');
+                                }}
+                                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer"
+                              >
+                                انصراف
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {backups.length === 0 ? (
+                        <div className="text-center py-12 text-zinc-500">
+                          <Database className="w-10 h-10 mx-auto mb-3 opacity-30 text-zinc-400" />
+                          <p className="text-sm">هیچ فایل پشتیبانی یافت نشد.</p>
+                          <p className="text-xs text-zinc-600 mt-1">با کلیک روی دکمه بالا، اولین نسخه پشتیبان رمزنگاری‌شده را بسازید.</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-right text-sm border-collapse">
+                            <thead>
+                              <tr className="border-b border-zinc-800/80 text-zinc-400 text-xs">
+                                <th className="pb-3 pt-1 font-semibold pr-2">نام فایل پشتیبان</th>
+                                <th className="pb-3 pt-1 font-semibold">حجم فایل</th>
+                                <th className="pb-3 pt-1 font-semibold">تاریخ ایجاد</th>
+                                <th className="pb-3 pt-1 font-semibold text-left pl-2">عملیات</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-800/30">
+                              {backups.map((backup) => (
+                                <tr key={backup.filename} className="text-zinc-300 hover:bg-zinc-900/30 transition-colors">
+                                  <td className="py-3.5 pr-2 font-mono text-xs text-zinc-300" dir="ltr">
+                                    {backup.filename}
+                                  </td>
+                                  <td className="py-3.5 text-xs text-zinc-400 font-mono">
+                                    {(backup.size / 1024).toFixed(2)} KB
+                                  </td>
+                                  <td className="py-3.5 text-xs text-zinc-400 font-mono">
+                                    {new Date(backup.date).toLocaleString('fa-IR')}
+                                  </td>
+                                  <td className="py-3.5 pl-2 text-left">
+                                    <div className="flex items-center justify-end gap-2.5" dir="ltr">
+                                      <button
+                                        onClick={() => {
+                                          setSelectedBackupForRestore(backup.filename);
+                                          setBackupPasswordToRestore(settings.backupPassword || '');
+                                        }}
+                                        className="text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                                      >
+                                        <Unlock className="w-3 h-3" />
+                                        <span>Restore</span>
+                                      </button>
+                                      
+                                      <button
+                                        onClick={() => handleDeleteBackup(backup.filename)}
+                                        className="text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                                        title="Delete backup"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                    </div>
+
+                    <div className="bg-gradient-to-br from-zinc-900/40 to-zinc-900/20 border border-zinc-800/80 rounded-2xl p-6">
+                      <h3 className="text-base font-bold mb-3 text-zinc-200 flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-emerald-400" />
+                        <span>توضیحات امنیتی دیکریپت و بازیابی فایلهای پشتیبان</span>
+                      </h3>
+                      <p className="text-zinc-400 text-xs leading-relaxed">
+                        سامانه برای تضمین ۱۰۰٪ امنیت، تمام فایل‌های پشتیبان را با الگوریتم قدرتمند و نظامی <code className="text-emerald-400 font-mono">AES-256-CBC</code> و به همراه نمک تصادفی (Salt) رمزگذاری می‌کند. بدون داشتن رمز نگاری که در تنظیمات ذخیره کرده‌اید، بازگشایی اطلاعات حتی توسط قوی‌ترین ابرکامپیوترها نیز عملاً ناممکن است.
+                      </p>
                     </div>
 
                   </div>
