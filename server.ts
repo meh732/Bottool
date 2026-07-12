@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
@@ -7,11 +8,23 @@ import { loadDb, updateSettings, getSettings, getLogs, getBotStatus, clearLogs }
 import { startBotEngine, stopBotEngine, handleTelegramUpdate } from './src/telegramBot.js';
 import { createBackup, restoreBackup, listBackups, deleteBackup, initAutoBackup } from './src/backup.js';
 
-dotenv.config();
-
 // Resolve paths for ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function findProjectRoot(): string {
+  let dir = __dirname;
+  while (dir && dir !== path.parse(dir).root) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+  return process.cwd();
+}
+
+const PROJECT_ROOT = findProjectRoot();
+dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 
 async function bootstrap() {
   // Load database

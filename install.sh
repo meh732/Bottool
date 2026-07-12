@@ -157,10 +157,10 @@ EOF
     exit 1
   fi
 
-  # Start the application using PM2
+  # Start the application using PM2 with explicit working directory and env updates
   echo -e "${BLUE}🚀 راه‌اندازی ربات در پس‌زمینه با PM2...${NC}"
   pm2 delete vpn-customizer-bot &> /dev/null || true
-  NODE_ENV=production pm2 start dist/server.cjs --name "vpn-customizer-bot" --env NODE_ENV=production
+  NODE_ENV=production pm2 start dist/server.cjs --name "vpn-customizer-bot" --cwd "/opt/vpn-customizer-bot" --update-env --env NODE_ENV=production
   pm2 save
   pm2 startup
 
@@ -200,9 +200,9 @@ update_bot() {
   echo -e "${BLUE}⚙️ کامپایل مجدد فایل‌ها...${NC}"
   npm run build
 
-  # Restart PM2 process
+  # Restart PM2 process with environment updates and explicit working directory
   echo -e "${BLUE}🚀 راه‌اندازی مجدد در PM2...${NC}"
-  pm2 restart vpn-customizer-bot || pm2 start dist/server.cjs --name "vpn-customizer-bot"
+  pm2 restart vpn-customizer-bot --update-env &> /dev/null || pm2 start dist/server.cjs --name "vpn-customizer-bot" --cwd "/opt/vpn-customizer-bot" --update-env --env NODE_ENV=production
 
   echo -e ""
   echo -e "${GREEN}================================================================${NC}"

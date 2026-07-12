@@ -1,8 +1,28 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { BotSettings, ProcessedLog, DashboardData, UserBotSettings } from './types.js';
 
-const DB_FILE = path.join(process.cwd(), 'db.json');
+function findProjectRoot(): string {
+  let dir = '';
+  try {
+    const filename = fileURLToPath(import.meta.url);
+    dir = path.dirname(filename);
+  } catch {
+    dir = __dirname;
+  }
+
+  while (dir && dir !== path.parse(dir).root) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+  return process.cwd();
+}
+
+const PROJECT_ROOT = findProjectRoot();
+const DB_FILE = path.join(PROJECT_ROOT, 'db.json');
 
 const defaultSettings: BotSettings = {
   botToken: '',

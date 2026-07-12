@@ -1,10 +1,30 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { fileURLToPath } from 'url';
 import { getSettings, loadDb, saveDb } from './db.js';
 
-const BACKUPS_DIR = path.join(process.cwd(), 'backups');
-const DB_FILE = path.join(process.cwd(), 'db.json');
+function findProjectRoot(): string {
+  let dir = '';
+  try {
+    const filename = fileURLToPath(import.meta.url);
+    dir = path.dirname(filename);
+  } catch {
+    dir = __dirname;
+  }
+
+  while (dir && dir !== path.parse(dir).root) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+  return process.cwd();
+}
+
+const PROJECT_ROOT = findProjectRoot();
+const BACKUPS_DIR = path.join(PROJECT_ROOT, 'backups');
+const DB_FILE = path.join(PROJECT_ROOT, 'db.json');
 
 // Make sure backups directory exists
 if (!fs.existsSync(BACKUPS_DIR)) {
