@@ -1,0 +1,6 @@
+{
+  "name": "VPN Config Customizer Bot",
+  "description": "Telegram bot manager and web interface to unlock, rename, and customize NPVT (NapsternetV), OVPN, and other VPN configuration files.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
