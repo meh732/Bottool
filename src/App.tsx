@@ -218,21 +218,24 @@ export default function App() {
   };
 
   // Fetch Dashboard Data from Backend
-  const fetchDashboardData = async (showLoading = false) => {
+  const fetchDashboardData = async (isInitialLoad = false) => {
     if (!authToken) return;
-    if (showLoading) setIsLoading(true);
+    if (isInitialLoad) setIsLoading(true);
     try {
       const res = await apiFetch('/api/dashboard');
       if (res.ok) {
         const data = await res.json();
-        setSettings(data.settings);
+        // Only override settings on initial load to avoid wiping out user typing
+        if (isInitialLoad) {
+          setSettings(data.settings);
+        }
         setBotStatus(data.status);
         setLogs(data.logs);
       }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
-      if (showLoading) setIsLoading(false);
+      if (isInitialLoad) setIsLoading(false);
     }
   };
 
