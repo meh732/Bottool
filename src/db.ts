@@ -4,13 +4,7 @@ import { fileURLToPath } from 'url';
 import { BotSettings, ProcessedLog, DashboardData, UserBotSettings } from './types.js';
 
 function findProjectRoot(): string {
-  let dir = '';
-  try {
-    const filename = fileURLToPath(import.meta.url);
-    dir = path.dirname(filename);
-  } catch {
-    dir = __dirname;
-  }
+  let dir = process.cwd();
 
   while (dir && dir !== path.parse(dir).root) {
     if (fs.existsSync(path.join(dir, 'package.json'))) {

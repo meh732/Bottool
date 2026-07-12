@@ -159,7 +159,7 @@ EOF
 
   # Export variables to shell so PM2 inherits them securely
   export NODE_ENV=production
-  export PORT=${USER_PORT}
+  export APP_PORT=${USER_PORT}
   export APP_URL=${USER_URL}
   export ADMIN_USERNAME=${USER_ADMIN}
   export ADMIN_PASSWORD=${USER_PASS}

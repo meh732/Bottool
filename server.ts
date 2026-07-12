@@ -8,12 +8,8 @@ import { loadDb, updateSettings, getSettings, getLogs, getBotStatus, clearLogs }
 import { startBotEngine, stopBotEngine, handleTelegramUpdate } from './src/telegramBot.js';
 import { createBackup, restoreBackup, listBackups, deleteBackup, initAutoBackup } from './src/backup.js';
 
-// Resolve paths for ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 function findProjectRoot(): string {
-  let dir = __dirname;
+  let dir = process.cwd();
   while (dir && dir !== path.parse(dir).root) {
     if (fs.existsSync(path.join(dir, 'package.json'))) {
       return dir;
@@ -41,7 +37,8 @@ async function bootstrap() {
   }
 
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  // Using APP_PORT to avoid conflict with Cloud Run's default PORT=8080 which breaks preview
+  const PORT = process.env.APP_PORT ? parseInt(process.env.APP_PORT, 10) : 3000;
 
   app.use(express.json());
 
