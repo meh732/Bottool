@@ -157,10 +157,18 @@ EOF
     exit 1
   fi
 
+  # Export variables to shell so PM2 inherits them securely
+  export NODE_ENV=production
+  export PORT=${USER_PORT}
+  export APP_URL=${USER_URL}
+  export ADMIN_USERNAME=${USER_ADMIN}
+  export ADMIN_PASSWORD=${USER_PASS}
+  export BACKUP_PASSWORD=${USER_BACKUP}
+
   # Start the application using PM2 with explicit working directory and env updates
   echo -e "${BLUE}🚀 راه‌اندازی ربات در پس‌زمینه با PM2...${NC}"
   pm2 delete vpn-customizer-bot &> /dev/null || true
-  NODE_ENV=production pm2 start dist/server.cjs --name "vpn-customizer-bot" --cwd "/opt/vpn-customizer-bot" --update-env --env NODE_ENV=production
+  pm2 start "${TARGET_DIR}/dist/server.cjs" --name "vpn-customizer-bot" --cwd "${TARGET_DIR}" --update-env
   pm2 save
   pm2 startup
 
@@ -200,9 +208,17 @@ update_bot() {
   echo -e "${BLUE}⚙️ کامپایل مجدد فایل‌ها...${NC}"
   npm run build
 
+  # Load and export existing .env variables if present so PM2 inherits/updates them
+  if [ -f ".env" ]; then
+    echo -e "${BLUE}⚙️ بارگذاری و بازخوانی تنظیمات پورت و کاربری از .env...${NC}"
+    set -a
+    source .env
+    set +a
+  fi
+
   # Restart PM2 process with environment updates and explicit working directory
   echo -e "${BLUE}🚀 راه‌اندازی مجدد در PM2...${NC}"
-  pm2 restart vpn-customizer-bot --update-env &> /dev/null || pm2 start dist/server.cjs --name "vpn-customizer-bot" --cwd "/opt/vpn-customizer-bot" --update-env --env NODE_ENV=production
+  pm2 restart vpn-customizer-bot --update-env &> /dev/null || pm2 start "${TARGET_DIR}/dist/server.cjs" --name "vpn-customizer-bot" --cwd "${TARGET_DIR}" --update-env
 
   echo -e ""
   echo -e "${GREEN}================================================================${NC}"

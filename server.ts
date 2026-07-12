@@ -24,7 +24,7 @@ function findProjectRoot(): string {
 }
 
 const PROJECT_ROOT = findProjectRoot();
-dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
+dotenv.config({ path: path.join(PROJECT_ROOT, '.env'), override: true });
 
 async function bootstrap() {
   // Load database
